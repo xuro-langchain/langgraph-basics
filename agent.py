@@ -1,5 +1,6 @@
 from typing_extensions import TypedDict
 from typing import Annotated, Optional
+import uuid
 
 from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.prebuilt import ToolNode
@@ -12,14 +13,15 @@ from langchain_core.runnables import RunnableConfig
 from tools import get_tools # TODO: Add your own tools here! See tools.py
 from prompts import get_agent_prompt # TODO: Add your own prompts here! See prompts.py
 
+from dotenv import load_dotenv
 
-
+load_dotenv(dotenv_path="./.env", override=True)
 
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
 
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
-    slack_user: Optional[str]
+    slack_user: str
     query_plan: Optional[str] 
     # TODO: Customize and add more fields as needed!
 
@@ -82,31 +84,68 @@ def should_continue(state: State, config: RunnableConfig):
 # Linking the Graph Together ---------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------
 
-graph = StateGraph(State)
+def make_graph():
+    graph = StateGraph(State)
 
-# Add nodes 
-graph.add_node("agent", agent_node)
-graph.add_node("tools", tool_node)
-# TODO: Add your plan node here!
+    # Add nodes 
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", tool_node)
+    # TODO: Add your plan node here!
 
-# Add edges 
-# First, we define the start node. The query will always route to the agent node first. 
-graph.add_edge(START, "agent")
-# TODO: You could always make a plan first, and always route to the agent node.
+    # Add edges 
+    # First, we define the start node. The query will always route to the agent node first. 
+    graph.add_edge(START, "agent")
+    # TODO: You could always make a plan first, and always route to the agent node.
 
-# We now add a conditional edge
-graph.add_conditional_edges(
-    "agent",
-    # Function representing our conditional edge
-    should_continue,
-    {
-        # If `tools`, then we call the tool node.
-        "continue": "tools",
-        # Otherwise we finish.
-        "end": END,
-    },
-)
+    # We now add a conditional edge
+    graph.add_conditional_edges(
+        "agent",
+        # Function representing our conditional edge
+        should_continue,
+        {
+            # If `tools`, then we call the tool node.
+            "continue": "tools",
+            # Otherwise we finish.
+            "end": END,
+        },
+    )
 
-# After executing a tool call, always send the result to the agent.
-graph.add_edge("tools", "agent")
-graph = graph.compile(name="assistant")
+    # After executing a tool call, always send the result to the agent.
+    graph.add_edge("tools", "agent")
+    graph = graph.compile(name="assistant")
+    return graph
+
+
+# ------------------------------------------------------------------------------------------------
+# Run the Graph Agent ---------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
+
+def run_graph():
+    graph = make_graph()
+
+    config = {"configurable": {"thread_id": uuid.uuid4()}} 
+    # The config lets us set additional metadata, including a thread_id
+    # which is equivalent to an ID for a conversation.
+
+    input = {
+        "messages": [HumanMessage(content="What is 1 + 1?")],
+        "slack_user": "Robert Xu"
+    }
+    result = graph.invoke(input, config=config) # TODO: You can switch to streaming!
+    # By default this returns the final state of the graph
+
+    for message in result["messages"]:
+        if message.content:
+            print(message.type + ": " + message.content)
+
+    print("Next Human Message --------------------------------")
+    # TODO: If you invoke again, note that the conversation history is preserved!
+    result["messages"].append(HumanMessage(content="Now what is 1 + 2?"))
+    result = graph.invoke(result, config=config)
+    
+    for message in result["messages"]:
+        if message.content:
+            print(message.type + ": " + message.content)
+
+if __name__ == "__main__":
+    run_graph()

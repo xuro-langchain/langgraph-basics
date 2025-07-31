@@ -1,0 +1,12 @@
+.env
+.venv
+.DS_Store
+__pycache__
+langgraph-docs-db
+.vscode
+.ipynb_checkpoints
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+.coverage.*

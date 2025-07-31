@@ -1,6 +1,6 @@
-# LangGraph 101
+# LangGraph Basics
 
-Welcome to LangGraph 101! 
+Welcome to LangGraph Basics! 
 
 ## Introduction
 In this session, you will learn about the fundamentals of LangGraph through one of our notebooks, as well as a prebuilt agent
@@ -8,7 +8,7 @@ In this session, you will learn about the fundamentals of LangGraph through one 
 
 ## Pre-work
 
-### Clone the LangGraph 101 repo
+### Clone the LangGraph Basics repo
 ```
 git clone https://github.com/xuro-langchain/langgraph-basics
 ```

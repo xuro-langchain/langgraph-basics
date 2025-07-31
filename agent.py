@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from langchain_core.messages import ToolMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 from tools import get_tools # TODO: Add your own tools here! See tools.py
 from prompts import get_agent_prompt # TODO: Add your own prompts here! See prompts.py
@@ -20,11 +21,14 @@ load_dotenv(dotenv_path="./.env", override=True)
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
 
 class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
-    slack_user: str
-    query_plan: Optional[str] 
+    messages: Annotated[list[AnyMessage], add_messages] # Conversation history
+    slack_user: str 
+    query_plan: Optional[str] # TODO: Use in plan node!
     # TODO: Customize and add more fields as needed!
 
+checkpointer = MemorySaver()
+# Allows us to persist the state of the graph between invocations
+# Essentially, enables conversation history to be maintained
 
 
 
@@ -84,7 +88,7 @@ def should_continue(state: State, config: RunnableConfig):
 # Linking the Graph Together ---------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------
 
-def make_graph():
+def make_graph(checkpointer):
     graph = StateGraph(State)
 
     # Add nodes 
@@ -112,7 +116,7 @@ def make_graph():
 
     # After executing a tool call, always send the result to the agent.
     graph.add_edge("tools", "agent")
-    graph = graph.compile(name="assistant")
+    graph = graph.compile(name="assistant", checkpointer=checkpointer)
     return graph
 
 
@@ -120,8 +124,8 @@ def make_graph():
 # Run the Graph Agent ---------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------
 
-def run_graph():
-    graph = make_graph()
+def run_graph(checkpointer):
+    graph = make_graph(checkpointer)
 
     config = {"configurable": {"thread_id": uuid.uuid4()}} 
     # The config lets us set additional metadata, including a thread_id
@@ -131,7 +135,7 @@ def run_graph():
         "messages": [HumanMessage(content="What is 1 + 1?")],
         "slack_user": "Robert Xu"
     }
-    result = graph.invoke(input, config=config) # TODO: You can switch to streaming!
+    result = graph.invoke(input, config=config) # TODO: You can also stream
     # By default this returns the final state of the graph
 
     for message in result["messages"]:
@@ -139,13 +143,19 @@ def run_graph():
             print(message.type + ": " + message.content)
 
     print("Next Human Message --------------------------------")
-    # TODO: If you invoke again, note that the conversation history is preserved!
-    result["messages"].append(HumanMessage(content="Now what is 1 + 2?"))
-    result = graph.invoke(result, config=config)
+    
+    new_input = {
+        "messages": [HumanMessage(content="Now what is 1 + 2?")],
+        "slack_user": "Robert Xu"
+    }
+    result = graph.invoke(new_input, config=config)
+    # NOTE: The previous messages are still in the conversation history!
+    # Sending new requests will append to the existing conversation history
+    # because we used a checkpointer
     
     for message in result["messages"]:
         if message.content:
             print(message.type + ": " + message.content)
 
 if __name__ == "__main__":
-    run_graph()
+    run_graph(checkpointer)
